@@ -125,6 +125,8 @@ function generate_nomad_config {
   local readonly num_servers="$3"
   local readonly config_dir="$4"
   local readonly user="$5"
+  local readonly acl_policy_ttl="$6"
+  local readonly acl_token_ttl="$7"
   local readonly config_path="$config_dir/$NOMAD_CONFIG_FILE"
 
   local instance_id=""
@@ -158,6 +160,17 @@ EOF
 )
   fi
 
+  local acl_config=""
+  if [ -n "$acl_policy_ttl" ] || [ -n "$acl_token_ttl" ]; then
+    acl_config=$(cat <<EOF
+acl {
+  enabled = true
+  policy_ttl = "${acl_policy_ttl:-default 60s}"
+  token_ttl = "${acl_token_ttl:-default 30s}"
+}
+EOF
+)
+  fi
   log_info "Creating default Nomad config file in $config_path"
   cat > "$config_path" <<EOF
 datacenter = "$availability_zone"
@@ -174,6 +187,8 @@ advertise {
 $client_config
 
 $server_config
+
+$acl_config
 
 consul {
   address = "127.0.0.1:8500"
@@ -236,6 +251,8 @@ function run {
   local user=""
   local skip_nomad_config="false"
   local use_sudo=""
+  local acl_token_ttl=""
+  local acl_policy_ttl=""
   local environment=()
   local all_args=()
 
@@ -299,6 +316,14 @@ function run {
         environment+=("$2")
         shift
         ;;
+      --acl-policy-ttl)
+        acl_policy_ttl="$2"
+        shift
+        ;;
+      --acl-token-ttl)
+        acl_token_ttl="$2"
+        shift
+        ;;
       --help)
         print_usage
         exit
@@ -358,7 +383,7 @@ function run {
   if [[ "$skip_nomad_config" == "true" ]]; then
     log_info "The --skip-nomad-config flag is set, so will not generate a default Nomad config file."
   else
-    generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user"
+    generate_nomad_config "$server" "$client" "$num_servers" "$config_dir" "$user" "$acl_policy_ttl" "$acl_token_ttl"
   fi
 
   generate_supervisor_config "$SUPERVISOR_CONFIG_PATH" "$config_dir" "$data_dir" "$bin_dir" "$log_dir" "$user" "$use_sudo" "${environment[@]}"
